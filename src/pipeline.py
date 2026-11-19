@@ -1,11 +1,13 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
 from sklearn.base import clone
+from sklearn.calibration import calibration_curve
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import average_precision_score
-from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.metrics import average_precision_score, confusion_matrix, recall_score
+from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -15,6 +17,8 @@ DATA_PATH = "data/WA_Fn-UseC_-Telco-Customer-Churn.csv"
 NUM_COLS = ["tenure", "MonthlyCharges", "TotalCharges", "SeniorCitizen"]
 SCORING = "average_precision"
 N_TRIALS = 50
+COST_FN = 5
+COST_FP = 1
 
 
 def get_data():
@@ -67,6 +71,32 @@ def nested_cv(pipe, X, y):
     return np.array(scores)
 
 
+def total_cost(y, probs, threshold):
+    pred = (probs >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y, pred).ravel()
+    return COST_FN * fn + COST_FP * fp
+
+
+def pick_threshold(y, probs):
+    thresholds = np.arange(0.01, 1.0, 0.01)
+    costs = [total_cost(y, probs, t) for t in thresholds]
+    best = int(np.argmin(costs))
+    return thresholds[best]
+
+
+def plot_calibration(y, probs, path):
+    frac_pos, mean_pred = calibration_curve(y, probs, n_bins=10)
+    plt.figure(figsize=(6, 6))
+    plt.plot([0, 1], [0, 1], "--", label="perfect calibration")
+    plt.plot(mean_pred, frac_pos, "o-", label="logistic regression")
+    plt.xlabel("predicted probability")
+    plt.ylabel("actual churn rate")
+    plt.title("Calibration curve (test set)")
+    plt.legend()
+    plt.savefig(path)
+    plt.close()
+
+
 def main():
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     X_train, X_test, y_train, y_test = get_data()
@@ -81,6 +111,21 @@ def main():
     print(f"final best cv pr-auc: {study.best_value:.3f}")
     study.trials_dataframe().to_csv("docs/optuna_trials.csv", index=False)
     print("saved docs/optuna_trials.csv")
+
+    final = set_best(pipe, study.best_params)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    oof_probs = cross_val_predict(final, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
+    threshold = pick_threshold(y_train, oof_probs)
+    print(f"best threshold (picked on train cv): {threshold:.2f}")
+
+    final.fit(X_train, y_train)
+    test_probs = final.predict_proba(X_test)[:, 1]
+    plot_calibration(y_test, test_probs, "docs/calibration_curve.png")
+    print("saved docs/calibration_curve.png")
+
+    for t in [0.5, threshold]:
+        pred = (test_probs >= t).astype(int)
+        print(f"test, threshold {t:.2f}: cost = {total_cost(y_test, test_probs, t)}, recall = {recall_score(y_test, pred):.3f}")
 
 
 if __name__ == "__main__":
