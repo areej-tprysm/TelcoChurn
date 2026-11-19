@@ -2,7 +2,7 @@ import pandas as pd
 
 
 def load_data(path):
-    """Load the churn CSV with explicit dtypes."""
+   
     dtypes = {
         "customerID": "string",
         "SeniorCitizen": "int64",
@@ -20,7 +20,7 @@ def load_data(path):
 
 
 def clean_data(data):
-    """Fix the problems found in EDA."""
+   
     data = data.copy()
     # 1. TotalCharges blank -> 0 (new customers), then number
     data["TotalCharges"] = pd.to_numeric(data["TotalCharges"], errors="coerce").fillna(0)
