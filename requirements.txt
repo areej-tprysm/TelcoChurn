@@ -2,5 +2,9 @@ pandas
 numpy
 matplotlib
 seaborn
+scikit-learn
 pytest
 optuna
+lightgbm
+catboost
+shap
