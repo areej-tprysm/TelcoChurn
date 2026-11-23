@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
-from sklearn.base import clone
 from sklearn.calibration import calibration_curve
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
@@ -15,7 +14,6 @@ from src.data import clean_data
 
 DATA_PATH = "data/WA_Fn-UseC_-Telco-Customer-Churn.csv"
 NUM_COLS = ["tenure", "MonthlyCharges", "TotalCharges", "SeniorCitizen"]
-SCORING = "average_precision"
 N_TRIALS = 50
 COST_FN = 5
 COST_FP = 1
@@ -28,46 +26,47 @@ def get_data():
     return train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
 
-def build_pipeline(cat_cols):
+def build_pipeline(cat_cols, C=1.0, class_weight=None):
     pre = ColumnTransformer([
         ("num", StandardScaler(), NUM_COLS),
         ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
     ])
-    model = LogisticRegression(max_iter=1000)
+    model = LogisticRegression(C=C, class_weight=class_weight, max_iter=1000)
     return Pipeline([("pre", pre), ("model", model)])
 
 
-def set_best(pipe, params):
-    return clone(pipe).set_params(model__C=params["C"], model__class_weight=params["class_weight"])
-
-
-def tune(pipe, X, y):
+def tune(X, y, cat_cols):
     inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 
     def objective(trial):
-        params = {
-            "C": trial.suggest_float("C", 1e-3, 100, log=True),
-            "class_weight": trial.suggest_categorical("class_weight", [None, "balanced"]),
-        }
-        model = set_best(pipe, params)
-        return cross_val_score(model, X, y, cv=inner_cv, scoring=SCORING).mean()
+        C = trial.suggest_float("C", 0.001, 100, log=True)
+        class_weight = trial.suggest_categorical("class_weight", [None, "balanced"])
+        pipe = build_pipeline(cat_cols, C, class_weight)
+        scores = cross_val_score(pipe, X, y, cv=inner_cv, scoring="average_precision")
+        return scores.mean()
 
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=42))
     study.optimize(objective, n_trials=N_TRIALS)
     return study
 
 
-def nested_cv(pipe, X, y):
+def nested_cv(X, y, cat_cols):
     outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     scores = []
-    for i, (tr, va) in enumerate(outer_cv.split(X, y), 1):
-        X_tr, X_va = X.iloc[tr], X.iloc[va]
-        y_tr, y_va = y.iloc[tr], y.iloc[va]
-        study = tune(pipe, X_tr, y_tr)
-        model = set_best(pipe, study.best_params).fit(X_tr, y_tr)
-        score = average_precision_score(y_va, model.predict_proba(X_va)[:, 1])
+    for train_idx, val_idx in outer_cv.split(X, y):
+        X_tr = X.iloc[train_idx]
+        y_tr = y.iloc[train_idx]
+        X_val = X.iloc[val_idx]
+        y_val = y.iloc[val_idx]
+
+        study = tune(X_tr, y_tr, cat_cols)
+        best = study.best_params
+        pipe = build_pipeline(cat_cols, best["C"], best["class_weight"])
+        pipe.fit(X_tr, y_tr)
+        probs = pipe.predict_proba(X_val)[:, 1]
+        score = average_precision_score(y_val, probs)
         scores.append(score)
-        print(f"outer fold {i}: pr-auc = {score:.3f}, best params = {study.best_params}")
+        print("outer fold pr-auc:", round(score, 3), "best params:", best)
     return np.array(scores)
 
 
@@ -78,10 +77,14 @@ def total_cost(y, probs, threshold):
 
 
 def pick_threshold(y, probs):
-    thresholds = np.arange(0.01, 1.0, 0.01)
-    costs = [total_cost(y, probs, t) for t in thresholds]
-    best = int(np.argmin(costs))
-    return thresholds[best]
+    best_threshold = 0.5
+    best_cost = 10 ** 9
+    for t in np.arange(0.01, 1.0, 0.01):
+        cost = total_cost(y, probs, t)
+        if cost < best_cost:
+            best_cost = cost
+            best_threshold = t
+    return best_threshold
 
 
 def plot_calibration(y, probs, path):
@@ -101,31 +104,29 @@ def main():
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     X_train, X_test, y_train, y_test = get_data()
     cat_cols = [c for c in X_train.columns if c not in NUM_COLS]
-    pipe = build_pipeline(cat_cols)
 
-    scores = nested_cv(pipe, X_train, y_train)
-    print(f"nested cv pr-auc: {scores.mean():.3f} ± {scores.std():.3f}")
+    scores = nested_cv(X_train, y_train, cat_cols)
+    print("nested cv pr-auc:", round(scores.mean(), 3), "±", round(scores.std(), 3))
 
-    study = tune(pipe, X_train, y_train)
-    print("final best params:", study.best_params)
-    print(f"final best cv pr-auc: {study.best_value:.3f}")
+    study = tune(X_train, y_train, cat_cols)
+    best = study.best_params
+    print("final best params:", best)
+    print("final best cv pr-auc:", round(study.best_value, 3))
     study.trials_dataframe().to_csv("docs/optuna_trials.csv", index=False)
-    print("saved docs/optuna_trials.csv")
 
-    final = set_best(pipe, study.best_params)
+    final = build_pipeline(cat_cols, best["C"], best["class_weight"])
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    oof_probs = cross_val_predict(final, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
-    threshold = pick_threshold(y_train, oof_probs)
-    print(f"best threshold (picked on train cv): {threshold:.2f}")
+    train_probs = cross_val_predict(final, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
+    threshold = pick_threshold(y_train, train_probs)
+    print("best threshold:", round(threshold, 2))
 
     final.fit(X_train, y_train)
     test_probs = final.predict_proba(X_test)[:, 1]
     plot_calibration(y_test, test_probs, "docs/calibration_curve.png")
-    print("saved docs/calibration_curve.png")
 
     for t in [0.5, threshold]:
         pred = (test_probs >= t).astype(int)
-        print(f"test, threshold {t:.2f}: cost = {total_cost(y_test, test_probs, t)}, recall = {recall_score(y_test, pred):.3f}")
+        print("test threshold", round(t, 2), "cost:", total_cost(y_test, test_probs, t), "recall:", round(recall_score(y_test, pred), 3))
 
 
 if __name__ == "__main__":
