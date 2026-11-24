@@ -19,12 +19,12 @@ I made 4 features and tested each one on CatBoost (base score 0.656).
 | new_customer | 1 if tenure is 6 months or less | 0.656 | keep |
 | monthly_x_contract | MonthlyCharges if contract is month-to-month, else 0 | 0.655 | drop |
 
-With both kept features together the score was 0.657. The change is very small (smaller than the std), so the new features almost didn't help. CatBoost already learns these patterns by itself.
+With both kept features together the score was 0.659. The change is very small (smaller than the std), so the new features almost didn't help. CatBoost already learns these patterns by itself.
 
 ## 3. Best model
 
 | Model | PR-AUC |
-| CatBoost + 2 features | 0.657 |
+| CatBoost + 2 features | 0.659 |
 | Logistic Regression | 0.662 |
 
 Logistic Regression was still the best, so it is saved in `models/best_model.joblib` with its config in `models/best_model_config.json` (C = 1.96, threshold = 0.16).
@@ -44,25 +44,25 @@ Each dot is one test customer. Dots on the right push churn up, dots on the left
 - **Two year contract** pushes churn down a lot.
 - **Electronic check** payment pushes churn up.
 
-## 5. SHAP local explanations (CatBoost, threshold 0.12)
+## 5. SHAP local explanations (CatBoost, threshold 0.14)
 
-### False positive (test row 1, churn prob 0.95, customer stayed)
+### False positive (test row 1, churn prob 0.92, customer stayed)
 
 ![False positive](plots/shap_false_positive.png)
 
 This customer had almost every risk sign: only 8 months tenure, a very high bill (100), month-to-month contract, fiber optic and senior citizen. So the model was very sure. But the customer stayed, maybe because they were happy with the service. This mistake is cheap, it only costs one offer.
 
-### False negative (test row 61, churn prob 0.01, customer left)
+### False negative (test row 61, churn prob 0.02, customer left)
 
 ![False negative](plots/shap_false_negative.png)
 
 This customer looked very safe: very low bill (20), 45 months tenure, not month-to-month and no internet service. Only electronic check pushed the risk up a little. They still left, so the reason was probably something that is not in our data, like moving or a better offer from another company.
 
-### True positive (test row 9, churn prob 0.38, customer left)
+### True positive (test row 9, churn prob 0.46, customer left)
 
 ![True positive](plots/shap_true_positive.png)
 
-Electronic check and month-to-month contract pushed the risk up. The probability was 0.38, which is above our threshold of 0.12, so the model caught this customer. With the default threshold of 0.5 this customer would have been missed.
+Electronic check and month-to-month contract pushed the risk up. The probability was 0.46, which is above our threshold of 0.14, so the model caught this customer. With the default threshold of 0.5 this customer would have been missed.
 
 ## 6. Why customers churn (for the business)
 
@@ -80,4 +80,4 @@ Some customers leave for reasons we can't see in the data, so the model cannot p
 It is calculated on the training data, so it can give importance to features the model only memorized. It also gives more importance to columns with many different values, like TotalCharges, even if they are not really more useful. Permutation importance on validation data can give a more useful picture of how much a feature actually helps predictions.
 
 **When would you pick a simpler model over a slightly more accurate boosted one?**
-When the performance difference is very small, the simpler model is easier to explain, faster and easier to maintain. In this case Logistic Regression (0.662) was better than CatBoost (0.657), so I selected Logistic Regression.
+When the performance difference is very small, the simpler model is easier to explain, faster and easier to maintain. In this case Logistic Regression (0.662) was better than CatBoost (0.659), so I selected Logistic Regression.
