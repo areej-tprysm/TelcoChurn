@@ -1,0 +1,11 @@
+customerID,tenure,MonthlyCharges,TotalCharges,Contract,InternetService,PhoneService,PaymentMethod,segment,Churn,anomaly_score
+9867-XOBQA,21,53.15,1183.2,Two year,DSL,No,Mailed check,3,0,-0.020837185889126975
+0895-UADGO,8,44.55,343.45,Two year,DSL,No,Mailed check,3,0,-0.02021956703505623
+8169-SAEJD,69,56.55,3952.65,Two year,DSL,No,Credit card (automatic),3,0,-0.019981886117192205
+9796-MVYXX,14,39.7,692.35,Two year,DSL,No,Mailed check,3,0,-0.01717761955599184
+4023-RTIQM,31,50.4,1580.1,One year,DSL,No,Credit card (automatic),3,0,-0.015206795868507705
+1282-IHQAC,70,44.05,3011.65,One year,DSL,No,Credit card (automatic),3,0,-0.013550268975106916
+6723-CEGQI,65,45.25,2933.95,Two year,DSL,No,Mailed check,3,0,-0.012926387967723163
+9830-ECLEN,58,50.0,2919.85,One year,DSL,No,Mailed check,3,0,-0.01283244043303211
+1371-DWPAZ,0,56.05,0.0,Two year,DSL,No,Credit card (automatic),3,0,-0.012229120017735129
+5227-JSCFE,71,46.35,3353.4,Two year,DSL,No,Credit card (automatic),3,0,-0.012046835783241172

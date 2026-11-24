@@ -8,3 +8,4 @@ optuna
 lightgbm
 catboost
 shap
+umap-learn
